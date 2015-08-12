@@ -22,10 +22,6 @@ See the file COPYING for complete licensing information.
 #define __Project__H_
 
 
-#ifdef OS_WIN32
-#pragma warning(disable:4786)
-#endif
-
 #include <iostream>
 #include <map>
 #include <set>
@@ -78,6 +74,11 @@ typedef int SOCKET;
 #endif
 #endif /* _AIX */
 
+#ifdef OS_DARWIN
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#endif /* OS_DARWIN */
+
 #endif /* OS_UNIX */
 
 #ifdef OS_WIN32
@@ -85,7 +86,9 @@ typedef int SOCKET;
 // 18Jun12: fd_setsize must be changed in the ruby binary (not in this extension). redefining it also causes segvs, see eventmachine/eventmachine#333
 //#define FD_SETSIZE 1024
 
+// WIN32_LEAN_AND_MEAN excludes APIs such as Cryptography, DDE, RPC, Shell, and Windows Sockets.
 #define WIN32_LEAN_AND_MEAN
+
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -93,9 +96,11 @@ typedef int SOCKET;
 #include <fcntl.h>
 #include <assert.h>
 
-typedef int socklen_t;
-typedef int pid_t;
-#endif
+// Use the Win32 wrapper library that Ruby owns to be able to close sockets with the close() function
+#define RUBY_EXPORT
+#include <ruby/defines.h>
+#include <ruby/win32.h>
+#endif /* OS_WIN32 */
 
 #if !defined(_MSC_VER) || _MSC_VER > 1500
 #include <stdint.h>
@@ -144,6 +149,12 @@ extern "C" {
   typedef void (*EMCallback)(const unsigned long, int, const char*, const unsigned long);
 #if __cplusplus
 }
+#endif
+
+#if defined(__GNUC__) && (__GNUC__ >= 3)
+#define UNUSED __attribute__ ((unused))
+#else
+#define UNUSED
 #endif
 
 #include "binder.h"

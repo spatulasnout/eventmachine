@@ -25,24 +25,27 @@ end
 def manual_ssl_config
   ssl_libs_heads_args = {
     :unix => [%w[ssl crypto], %w[openssl/ssl.h openssl/err.h]],
-    :mswin => [%w[ssleay32 eay32], %w[openssl/ssl.h openssl/err.h]],
+    :mswin => [%w[ssleay32 libeay32], %w[openssl/ssl.h openssl/err.h]],
   }
 
   dc_flags = ['ssl']
   dc_flags += ["#{ENV['OPENSSL']}/include", ENV['OPENSSL']] if /linux/ =~ RUBY_PLATFORM and ENV['OPENSSL']
 
   libs, heads = case RUBY_PLATFORM
-  when /mswin/    ; ssl_libs_heads_args[:mswin]
-  else              ssl_libs_heads_args[:unix]
+  when /mswin|mingw|bccwin/ ; ssl_libs_heads_args[:mswin]
+  else                        ssl_libs_heads_args[:unix]
   end
   dir_config(*dc_flags)
   check_libs(libs) and check_heads(heads)
 end
 
+# Eager check devs tools
+have_devel? if respond_to?(:have_devel?)
+
 if ENV['CROSS_COMPILING']
-  openssl_version = ENV.fetch("OPENSSL_VERSION", "1.0.0j")
+  openssl_version = ENV.fetch("OPENSSL_VERSION", "1.0.1i")
   openssl_dir = File.expand_path("~/.rake-compiler/builds/openssl-#{openssl_version}/")
-  if File.exists?(openssl_dir)
+  if File.exist?(openssl_dir)
     FileUtils.mkdir_p Dir.pwd+"/openssl/"
     FileUtils.cp Dir[openssl_dir+"/include/openssl/*.h"], Dir.pwd+"/openssl/", :verbose => true
     FileUtils.cp Dir[openssl_dir+"/lib*.a"], Dir.pwd, :verbose => true
@@ -60,16 +63,20 @@ end
 # Try to use pkg_config first, fixes #73
 if (!ENV['CROSS_COMPILING'] and pkg_config('openssl')) || manual_ssl_config
   add_define "WITH_SSL"
-else
-  add_define "WITHOUT_SSL"
 end
 
 add_define 'BUILD_FOR_RUBY'
 add_define 'HAVE_RBTRAP' if have_var('rb_trap_immediate', ['ruby.h', 'rubysig.h'])
 add_define "HAVE_TBR" if have_func('rb_thread_blocking_region')# and have_macro('RUBY_UBF_IO', 'ruby.h')
+add_define "HAVE_RB_THREAD_CALL_WITHOUT_GVL" if have_header('ruby/thread.h') && have_func('rb_thread_call_without_gvl', 'ruby/thread.h')
 add_define "HAVE_INOTIFY" if inotify = have_func('inotify_init', 'sys/inotify.h')
 add_define "HAVE_OLD_INOTIFY" if !inotify && have_macro('__NR_inotify_init', 'sys/syscall.h')
 add_define 'HAVE_WRITEV' if have_func('writev', 'sys/uio.h')
+add_define 'HAVE_RB_THREAD_FD_SELECT' if have_func('rb_thread_fd_select')
+add_define 'HAVE_RB_FDSET_T' if have_type('rb_fdset_t', 'ruby/intern.h')
+add_define 'HAVE_PIPE2' if have_func('pipe2', 'unistd.h')
+add_define 'HAVE_ACCEPT4' if have_func('accept4', 'sys/socket.h')
+add_define 'HAVE_SOCK_CLOEXEC' if have_const('SOCK_CLOEXEC', 'sys/socket.h')
 
 have_func('rb_wait_for_single_fd')
 have_func('rb_enable_interrupt')
@@ -106,7 +113,7 @@ when /mswin32/, /mingw32/, /bccwin32/
   check_libs(%w[kernel32 rpcrt4 gdi32], true)
 
   if GNU_CHAIN
-    CONFIG['LDSHARED'] = "$(CXX) -shared -lstdc++"
+    CONFIG['LDSHAREDXX'] = "$(CXX) -shared -static-libgcc -static-libstdc++"
   else
     $defs.push "-EHs"
     $defs.push "-GR"
@@ -116,13 +123,21 @@ when /solaris/
   add_define 'OS_SOLARIS8'
   check_libs(%w[nsl socket], true)
 
-  if CONFIG['CC'] == 'cc' and `cc -flags 2>&1` =~ /Sun/ # detect SUNWspro compiler
+  # If Ruby was compiled for 32-bits, then select() can only handle 1024 fds
+  # There is an alternate function, select_large_fdset, that supports more.
+  add_define 'HAVE_SELECT_LARGE_FDSET' if have_func('select_large_fdset', 'sys/select.h')
+
+  if CONFIG['CC'] == 'cc' && (
+     `cc -flags 2>&1` =~ /Sun/ || # detect SUNWspro compiler
+     `cc -V 2>&1` =~ /Sun/        # detect Solaris Studio compiler
+    )
     # SUN CHAIN
     add_define 'CC_SUNWspro'
     $preload = ["\nCXX = CC"] # hack a CXX= line into the makefile
     $CFLAGS = CONFIG['CFLAGS'] = "-KPIC"
     CONFIG['CCDLFLAGS'] = "-KPIC"
     CONFIG['LDSHARED'] = "$(CXX) -G -KPIC -lCstd"
+    CONFIG['LDSHAREDXX'] = "$(CXX) -G -KPIC -lCstd"
   else
     # GNU CHAIN
     # on Unix we need a g++ link, not gcc.
@@ -137,6 +152,8 @@ when /openbsd/
   CONFIG['LDSHAREDXX'] = "$(CXX) -shared -lstdc++ -fPIC"
 
 when /darwin/
+  add_define 'OS_DARWIN'
+
   # on Unix we need a g++ link, not gcc.
   # Ff line contributed by Daniel Harple.
   CONFIG['LDSHARED'] = "$(CXX) " + CONFIG['LDSHARED'].split[1..-1].join(' ')
@@ -164,6 +181,36 @@ else
   CONFIG['LDSHARED'] = "$(CXX) -shared"
 end
 
+# This is our wishlist. We use whichever flags work on the host.
+# In the future, add -Werror to make sure all warnings are resolved.
+# deprecated-declarations are used in OS X OpenSSL
+# ignored-qualifiers are used by the Bindings (would-be void *)
+# unused-result because GCC 4.6 no longer silences (void) ignore_this(function)
+# address because on Windows, rb_fd_select checks if &fds is non-NULL, which it cannot be
+%w(
+  -Wall
+  -Wextra
+  -Wno-deprecated-declarations
+  -Wno-ignored-qualifiers
+  -Wno-unused-result
+  -Wno-address
+).select do |flag|
+  try_link('int main() {return 0;}', flag)
+end.each do |flag|
+  $CFLAGS << ' ' << flag
+  $CPPFLAGS << ' ' << flag
+end
+puts "CFLAGS=#{$CFLAGS}"
+puts "CPPFLAGS=#{$CPPFLAGS}"
+
+# Platform-specific time functions
+if have_func('clock_gettime')
+  # clock_gettime is POSIX, but the monotonic clocks are not
+  have_const('CLOCK_MONOTONIC_RAW', 'time.h') # Linux
+  have_const('CLOCK_MONOTONIC', 'time.h') # Linux, Solaris, BSDs
+else
+  have_func('gethrtime') # Older Solaris and HP-UX
+end
 
 # solaris c++ compiler doesn't have make_pair()
 TRY_LINK.sub!('$(CC)', '$(CXX)')

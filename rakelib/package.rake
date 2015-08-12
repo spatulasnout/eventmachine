@@ -31,10 +31,12 @@ else
   def hack_cross_compilation(ext)
     # inject 1.8/1.9 pure-ruby entry point
     # HACK: add these dependencies to the task instead of using cross_compiling
-    ext.cross_platform.each do |platform|
-      task = "native:#{GEMSPEC.name}:#{platform}"
-      if Rake::Task.task_defined?(task)
-        Rake::Task[task].prerequisites.unshift "lib/#{ext.name}.rb"
+    if ext.cross_platform.is_a?(Array)
+      ext.cross_platform.each do |platform|
+        task = "native:#{GEMSPEC.name}:#{platform}"
+        if Rake::Task.task_defined?(task)
+          Rake::Task[task].prerequisites.unshift "lib/#{ext.name}.rb"
+        end
       end
     end
   end
@@ -63,7 +65,7 @@ end
   require "\#{$1}/#{File.basename(t.name, '.rb')}"
       eoruby
     end
-    at_exit{ FileUtils.rm t.name if File.exists?(t.name) }
+    at_exit{ FileUtils.rm t.name if File.exist?(t.name) }
   end
 end
 
@@ -94,3 +96,16 @@ def gem_cmd(action, name, *args)
 end
 
 Rake::Task[:clean].enhance [:clobber_package]
+
+# DevKit task following the example of Luis Lavena's test-ruby-c-extension
+task :devkit do
+  begin
+    require "devkit"
+  rescue LoadError => e
+    abort "Failed to activate RubyInstaller's DevKit required for compilation."
+  end
+end
+
+if RUBY_PLATFORM =~ /mingw|mswin/ then
+  Rake::Task['compile'].prerequisites.unshift 'devkit'
+end

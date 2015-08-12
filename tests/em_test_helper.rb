@@ -41,9 +41,17 @@ class Test::Unit::TestCase
       RbConfig::CONFIG['host_os'] =~ /mswin|mingw/
     end
 
+    def solaris?
+      RUBY_PLATFORM =~ /solaris/
+    end
+
     # http://stackoverflow.com/questions/1342535/how-can-i-tell-if-im-running-from-jruby-vs-ruby/1685970#1685970
     def jruby?
       defined? JRUBY_VERSION
+    end
+
+    def rbx?
+      defined?(RUBY_ENGINE) && RUBY_ENGINE == 'rbx'
     end
   end
 

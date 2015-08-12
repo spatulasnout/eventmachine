@@ -22,7 +22,16 @@ See the file COPYING for complete licensing information.
 
 #ifdef BUILD_FOR_RUBY
   #include <ruby.h>
-  #define EmSelect rb_thread_select
+  #ifdef HAVE_RB_THREAD_FD_SELECT
+    #define EmSelect rb_thread_fd_select
+  #else
+    // ruby 1.9.1 and below
+    #define EmSelect rb_thread_select
+  #endif
+
+  #ifdef HAVE_RB_THREAD_CALL_WITHOUT_GVL
+   #include <ruby/thread.h>
+  #endif
 
   #ifdef HAVE_RB_WAIT_FOR_SINGLE_FD
     #include <ruby/io.h>
@@ -60,8 +69,55 @@ See the file COPYING for complete licensing information.
   #define EmSelect select
 #endif
 
+#if !defined(HAVE_RB_FDSET_T)
+#define fd_check(n) (((n) < FD_SETSIZE) ? 1 : 0*fprintf(stderr, "fd %d too large for select\n", (n)))
+// These definitions are cribbed from include/ruby/intern.h in Ruby 1.9.3,
+// with this change: any macros that read or write the nth element of an
+// fdset first call fd_check to make sure n is in bounds.
+typedef fd_set rb_fdset_t;
+#define rb_fd_zero(f) FD_ZERO(f)
+#define rb_fd_set(n, f) do { if (fd_check(n)) FD_SET((n), (f)); } while(0)
+#define rb_fd_clr(n, f) do { if (fd_check(n)) FD_CLR((n), (f)); } while(0)
+#define rb_fd_isset(n, f) (fd_check(n) ? FD_ISSET((n), (f)) : 0)
+#define rb_fd_copy(d, s, n) (*(d) = *(s))
+#define rb_fd_dup(d, s) (*(d) = *(s))
+#define rb_fd_resize(n, f)  ((void)(f))
+#define rb_fd_ptr(f)  (f)
+#define rb_fd_init(f) FD_ZERO(f)
+#define rb_fd_init_copy(d, s) (*(d) = *(s))
+#define rb_fd_term(f) ((void)(f))
+#define rb_fd_max(f)  FD_SETSIZE
+#define rb_fd_select(n, rfds, wfds, efds, timeout)  \
+  select(fd_check((n)-1) ? (n) : FD_SETSIZE, (rfds), (wfds), (efds), (timeout))
+#define rb_thread_fd_select(n, rfds, wfds, efds, timeout)  \
+  rb_thread_select(fd_check((n)-1) ? (n) : FD_SETSIZE, (rfds), (wfds), (efds), (timeout))
+#endif
+
+
+// This Solaris fix is adapted from eval_intern.h in Ruby 1.9.3:
+// Solaris sys/select.h switches select to select_large_fdset to support larger
+// file descriptors if FD_SETSIZE is larger than 1024 on 32bit environment.
+// But Ruby doesn't change FD_SETSIZE because fd_set is allocated dynamically.
+// So following definition is required to use select_large_fdset.
+#ifdef HAVE_SELECT_LARGE_FDSET
+#define select(n, r, w, e, t) select_large_fdset((n), (r), (w), (e), (t))
+extern "C" {
+  int select_large_fdset(int, fd_set *, fd_set *, fd_set *, struct timeval *);
+}
+#endif
+
 class EventableDescriptor;
 class InotifyDescriptor;
+struct SelectData_t;
+
+/*************
+enum Poller_t
+*************/
+enum Poller_t {
+	Poller_Default, // typically Select
+	Poller_Epoll,
+	Poller_Kqueue
+};
 
 
 /********************
@@ -74,29 +130,34 @@ class EventMachine_t
 		static int GetMaxTimerCount();
 		static void SetMaxTimerCount (int);
 
+		static int GetSimultaneousAcceptCount();
+		static void SetSimultaneousAcceptCount (int);
+
 	public:
-		EventMachine_t (EMCallback);
+		EventMachine_t (EMCallback, Poller_t);
 		virtual ~EventMachine_t();
 
+		bool RunOnce();
 		void Run();
 		void ScheduleHalt();
 		void SignalLoopBreaker();
-		const unsigned long InstallOneshotTimer (int);
-		const unsigned long ConnectToServer (const char *, int, const char *, int);
-		const unsigned long ConnectToUnixServer (const char *);
+		const uintptr_t InstallOneshotTimer (int);
+		const uintptr_t ConnectToServer (const char *, int, const char *, int);
+		const uintptr_t ConnectToUnixServer (const char *);
 
-		const unsigned long CreateTcpServer (const char *, int);
-		const unsigned long OpenDatagramSocket (const char *, int);
-		const unsigned long CreateUnixDomainServer (const char*);
-		const unsigned long OpenKeyboard();
+		const uintptr_t CreateTcpServer (const char *, int);
+		const uintptr_t OpenDatagramSocket (const char *, int);
+		const uintptr_t CreateUnixDomainServer (const char*);
+		const uintptr_t AttachSD (SOCKET);
+		const uintptr_t OpenKeyboard();
 		//const char *Popen (const char*, const char*);
-		const unsigned long Socketpair (char* const*);
+		const uintptr_t Socketpair (char* const*);
 
 		void Add (EventableDescriptor*);
 		void Modify (EventableDescriptor*);
 		void Deregister (EventableDescriptor*);
 
-		const unsigned long AttachFD (int, bool);
+		const uintptr_t AttachFD (SOCKET, bool);
 		int DetachFD (EventableDescriptor*);
 
 		void ArmKqueueWriter (EventableDescriptor*);
@@ -113,18 +174,18 @@ class EventMachine_t
 		float GetHeartbeatInterval();
 		int SetHeartbeatInterval(float);
 
-		const unsigned long WatchFile (const char*);
+		const uintptr_t WatchFile (const char*);
 		void UnwatchFile (int);
-		void UnwatchFile (const unsigned long);
+		void UnwatchFile (const uintptr_t);
 
 		#ifdef HAVE_KQUEUE
 		void _HandleKqueueFileEvent (struct kevent*);
 		void _RegisterKqueueFileEvent(int);
 		#endif
 
-		const unsigned long WatchPid (int);
+		const uintptr_t WatchPid (int);
 		void UnwatchPid (int);
-		void UnwatchPid (const unsigned long);
+		void UnwatchPid (const uintptr_t);
 
 		#ifdef HAVE_KQUEUE
 		void _HandleKqueuePidEvent (struct kevent*);
@@ -132,20 +193,14 @@ class EventMachine_t
 
 		uint64_t GetCurrentLoopTime() { return MyCurrentLoopTime; }
 
-		// Temporary:
-		void _UseEpoll();
-		void _UseKqueue();
-
-		bool UsingKqueue() { return bKqueue; }
-		bool UsingEpoll() { return bEpoll; }
-
 		void QueueHeartbeat(EventableDescriptor*);
 		void ClearHeartbeat(uint64_t, EventableDescriptor*);
 
 		uint64_t GetRealTime();
 
+		Poller_t GetPoller() { return Poller; }
+
 	private:
-		void _RunOnce();
 		void _RunTimers();
 		void _UpdateTime();
 		void _AddNewDescriptors();
@@ -165,7 +220,7 @@ class EventMachine_t
 	public:
 		void _ReadLoopBreaker();
 		void _ReadInotifyEvents();
-        int NumCloseScheduled;
+		int NumCloseScheduled;
 
 	private:
 		enum {
@@ -186,10 +241,8 @@ class EventMachine_t
 		vector<EventableDescriptor*> NewDescriptors;
 		set<EventableDescriptor*> ModifiedDescriptors;
 
-		uint64_t NextHeartbeatTime;
-
-		int LoopBreakerReader;
-		int LoopBreakerWriter;
+		SOCKET LoopBreakerReader;
+		SOCKET LoopBreakerWriter;
 		#ifdef OS_WIN32
 		struct sockaddr_in LoopBreakerTarget;
 		#endif
@@ -203,22 +256,29 @@ class EventMachine_t
 		unsigned LastTickCount;
 		#endif
 
+		#ifdef OS_DARWIN
+		mach_timebase_info_data_t mach_timebase;
+		#endif
+
 	private:
 		bool bTerminateSignalReceived;
+		SelectData_t *SelectData;
 
-		bool bEpoll;
+		Poller_t Poller;
+
 		int epfd; // Epoll file-descriptor
 		#ifdef HAVE_EPOLL
 		struct epoll_event epoll_events [MaxEvents];
 		#endif
 
-		bool bKqueue;
 		int kqfd; // Kqueue file-descriptor
 		#ifdef HAVE_KQUEUE
 		struct kevent Karray [MaxEvents];
 		#endif
 
+		#ifdef HAVE_INOTIFY
 		InotifyDescriptor *inotify; // pollable descriptor for our inotify instance
+		#endif
 };
 
 
@@ -229,13 +289,15 @@ struct SelectData_t
 struct SelectData_t
 {
 	SelectData_t();
+	~SelectData_t();
 
 	int _Select();
+	void _Clear();
 
-	int maxsocket;
-	fd_set fdreads;
-	fd_set fdwrites;
-	fd_set fderrors;
+	SOCKET maxsocket;
+	rb_fdset_t fdreads;
+	rb_fdset_t fdwrites;
+	rb_fdset_t fderrors;
 	timeval tv;
 	int nSockets;
 };

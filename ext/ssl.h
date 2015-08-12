@@ -54,10 +54,14 @@ class SslContext_t
 class SslBox_t
 **************/
 
+#define SSLBOX_INPUT_CHUNKSIZE 2019
+#define SSLBOX_OUTPUT_CHUNKSIZE 2048
+#define SSLBOX_WRITE_BUFFER_SIZE 8192 // (SSLBOX_OUTPUT_CHUNKSIZE * 4)
+
 class SslBox_t
 {
 	public:
-		SslBox_t (bool is_server, const string &privkeyfile, const string &certchainfile, bool verify_peer, const unsigned long binding);
+		SslBox_t (bool is_server, const string &privkeyfile, const string &certchainfile, bool verify_peer, const uintptr_t binding);
 		virtual ~SslBox_t();
 
 		int PutPlaintext (const char*, int);

@@ -1,4 +1,4 @@
-# About EventMachine #
+# About EventMachine  [![Code Climate](https://codeclimate.com/github/eventmachine/eventmachine.png)](https://codeclimate.com/github/eventmachine/eventmachine)
 
 
 ## What is EventMachine ##
@@ -32,7 +32,7 @@ EventMachine has been around since the early 2000s and is a mature and battle te
 
 ## What platforms are supported by EventMachine? ##
 
-EventMachine supports Ruby 1.8.7, 1.9.2, REE, JRuby and **works well on Windows** as well
+EventMachine supports Ruby >= 1.8.7 and <= 2.2 REE, JRuby and **works well on Windows** as well
 as many operating systems from the Unix family (Linux, Mac OS X, BSD flavors).
 
 
@@ -75,7 +75,7 @@ Here's a fully-functional echo server written with EventMachine:
 
        def unbind
          puts "-- someone disconnected from the echo server!"
-      end
+       end
     end
 
     # Note that this will block current thread.
@@ -86,7 +86,7 @@ Here's a fully-functional echo server written with EventMachine:
 
 ## EventMachine documentation ##
 
-Currently we only have [reference documentation](http://eventmachine.rubyforge.org) and a [wiki](https://github.com/eventmachine/eventmachine/wiki).
+Currently we only have [reference documentation](http://rdoc.info/github/eventmachine/eventmachine/frames) and a [wiki](https://github.com/eventmachine/eventmachine/wiki).
 
 
 ## Community and where to get help ##
@@ -105,5 +105,4 @@ Copyright: (C) 2006-07 by Francis Cianfrocca. All Rights Reserved.
 
 ## Alternatives ##
 
-If you are unhappy with EventMachine and want to use Ruby, check out [Cool.io](http://coolio.github.com/).
-One caveat: by May 2011, it did not support JRuby and Windows.
+If you are unhappy with EventMachine and want to use Ruby, check out [Celluloid](https://celluloid.io/).

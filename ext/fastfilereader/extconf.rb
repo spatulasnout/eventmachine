@@ -12,6 +12,9 @@ def add_define(name)
   $defs.push("-D#{name}")
 end
 
+# Eager check devs tools
+have_devel? if respond_to?(:have_devel?)
+
 add_define 'BUILD_FOR_RUBY'
 
 # Minor platform details between *nix and Windows:
@@ -43,7 +46,7 @@ when /mswin32/, /mingw32/, /bccwin32/
   check_libs(%w[kernel32 rpcrt4 gdi32], true)
 
   if GNU_CHAIN
-    CONFIG['LDSHARED'] = "$(CXX) -shared -lstdc++"
+    CONFIG['LDSHAREDXX'] = "$(CXX) -shared -static-libgcc -static-libstdc++"
   else
     $defs.push "-EHs"
     $defs.push "-GR"
@@ -53,13 +56,17 @@ when /solaris/
   add_define 'OS_SOLARIS8'
   check_libs(%w[nsl socket], true)
 
-  if CONFIG['CC'] == 'cc' and `cc -flags 2>&1` =~ /Sun/ # detect SUNWspro compiler
+  if CONFIG['CC'] == 'cc' && (
+     `cc -flags 2>&1` =~ /Sun/ || # detect SUNWspro compiler
+     `cc -V 2>&1` =~ /Sun/        # detect Solaris Studio compiler
+    )
     # SUN CHAIN
     add_define 'CC_SUNWspro'
     $preload = ["\nCXX = CC"] # hack a CXX= line into the makefile
     $CFLAGS = CONFIG['CFLAGS'] = "-KPIC"
     CONFIG['CCDLFLAGS'] = "-KPIC"
     CONFIG['LDSHARED'] = "$(CXX) -G -KPIC -lCstd"
+    CONFIG['LDSHAREDXX'] = "$(CXX) -G -KPIC -lCstd"
   else
     # GNU CHAIN
     # on Unix we need a g++ link, not gcc.
