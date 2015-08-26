@@ -96,8 +96,12 @@ typedef int SOCKET;
 #include <fcntl.h>
 #include <assert.h>
 
+typedef int socklen_t;
+typedef int pid_t;
+
 // Use the Win32 wrapper library that Ruby owns to be able to close sockets with the close() function
 #define RUBY_EXPORT
+// #undef RUBY_EXPORT
 #include <ruby/defines.h>
 #include <ruby/win32.h>
 #endif /* OS_WIN32 */

@@ -66,6 +66,7 @@ if (!ENV['CROSS_COMPILING'] and pkg_config('openssl')) || manual_ssl_config
 end
 
 add_define 'BUILD_FOR_RUBY'
+add_define 'RUBY_EXTENSION_NEEDS_RUBY_EXPORT'
 add_define 'HAVE_RBTRAP' if have_var('rb_trap_immediate', ['ruby.h', 'rubysig.h'])
 add_define "HAVE_TBR" if have_func('rb_thread_blocking_region')# and have_macro('RUBY_UBF_IO', 'ruby.h')
 add_define "HAVE_RB_THREAD_CALL_WITHOUT_GVL" if have_header('ruby/thread.h') && have_func('rb_thread_call_without_gvl', 'ruby/thread.h')
@@ -115,7 +116,7 @@ when /mswin32/, /mingw32/, /bccwin32/
   if GNU_CHAIN
     CONFIG['LDSHAREDXX'] = "$(CXX) -shared -static-libgcc -static-libstdc++"
   else
-    $defs.push "-EHs"
+    $defs.push "-EHac"
     $defs.push "-GR"
   end
 
@@ -188,7 +189,6 @@ end
 # unused-result because GCC 4.6 no longer silences (void) ignore_this(function)
 # address because on Windows, rb_fd_select checks if &fds is non-NULL, which it cannot be
 %w(
-  -Wall
   -Wextra
   -Wno-deprecated-declarations
   -Wno-ignored-qualifiers
