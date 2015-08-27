@@ -235,9 +235,15 @@ EventableDescriptor::ScheduleClose
 
 void EventableDescriptor::ScheduleClose (bool after_writing)
 {
-	if (IsCloseScheduled())
-		return;
-	MyEventMachine->NumCloseScheduled++;
+	// Don't completely short-circuit if close has already been scheduled.
+	// Example: If the library user has called conn.close_connection_after_writing
+	// while our descriptor was still bConnectPending, and the connection then
+	// times out and we internally call ScheduleClose(false), we do want to fall
+	// through here and make sure bCloseNow does get set.
+	if (! IsCloseScheduled()) {
+		MyEventMachine->NumCloseScheduled++;
+	}
+	
 	// KEEP THIS SYNCHRONIZED WITH ::IsCloseScheduled.
 	if (after_writing)
 		bCloseAfterWriting = true;
