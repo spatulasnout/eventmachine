@@ -61,7 +61,7 @@ if ENV['CROSS_COMPILING']
 end
 
 # Try to use pkg_config first, fixes #73
-if (!ENV['CROSS_COMPILING'] and pkg_config('openssl')) || manual_ssl_config
+if (!ENV['CROSS_COMPILING'] and (RUBY_PLATFORM !~ /mswin/ && pkg_config('openssl'))) || manual_ssl_config
   add_define "WITH_SSL"
 end
 
