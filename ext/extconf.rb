@@ -25,7 +25,7 @@ end
 def manual_ssl_config
   ssl_libs_heads_args = {
     :unix => [%w[ssl crypto], %w[openssl/ssl.h openssl/err.h]],
-    :mswin => [%w[ssleay32 libeay32], %w[openssl/ssl.h openssl/err.h]],
+    :mswin => [%w[ssleay32MD libeay32MD], %w[openssl/ssl.h openssl/err.h]],
   }
 
   dc_flags = ['ssl']
